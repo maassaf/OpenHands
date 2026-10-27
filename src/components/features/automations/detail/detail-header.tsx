@@ -8,24 +8,28 @@ import DownloadIcon from "#/icons/download.svg?react";
 import TrashIcon from "#/icons/trash.svg?react";
 import EditIcon from "#/icons/u-edit.svg?react";
 import PlayIcon from "#/icons/play.svg?react";
+import { ArrowRightLeft } from "lucide-react";
 import { ActiveStatusBadge } from "./active-status-badge";
 
 interface DetailHeaderProps {
   automation: Automation;
   onToggle: () => void;
-  /** When provided (and the user can manage), the kebab menu shows an Edit entry. */
+  /** When provided (and the user can edit), the kebab menu shows an Edit entry. */
   onEdit?: () => void;
   onDelete: () => void;
+  /** When provided, the kebab menu shows a Transfer entry. */
+  onTransfer?: () => void;
   onExport: () => void;
   onDownloadTarball: () => void;
   onRunNow?: () => void;
   isRunningNow?: boolean;
   /** Whether the caller may mutate this automation (manage perm or owner). */
   canManage?: boolean;
+  /** Whether the caller may edit this automation. Defaults to `canManage`. */
+  canEdit?: boolean;
   /**
    * Whether the caller may flip the enabled switch. Defaults to `canManage`;
-   * pass `false` for a disabled automation the caller did not create, since
-   * non-creators may only turn automations off.
+   * pass `false` when the caller may only turn the automation off or not at all.
    */
   canToggle?: boolean;
 }
@@ -35,11 +39,13 @@ export function DetailHeader({
   onToggle,
   onEdit,
   onDelete,
+  onTransfer,
   onExport,
   onDownloadTarball,
   onRunNow,
   isRunningNow = false,
   canManage = true,
+  canEdit = canManage,
   canToggle = canManage,
 }: DetailHeaderProps) {
   const { t } = useTranslation("openhands");
@@ -57,7 +63,7 @@ export function DetailHeader({
       onClick: onDownloadTarball,
     },
     // Write items — only when the user may mutate this automation.
-    ...(canManage && onEdit
+    ...(canEdit && onEdit
       ? [
           {
             label: t(I18nKey.AUTOMATIONS$EDIT),
@@ -74,6 +80,15 @@ export function DetailHeader({
               : t(I18nKey.AUTOMATIONS$TURN_ON),
             icon: <PowerIcon className="size-4" />,
             onClick: onToggle,
+          },
+        ]
+      : []),
+    ...(onTransfer
+      ? [
+          {
+            label: t(I18nKey.AUTOMATIONS$TRANSFER),
+            icon: <ArrowRightLeft className="size-4" aria-hidden />,
+            onClick: onTransfer,
           },
         ]
       : []),

@@ -36,6 +36,17 @@ export interface AutomationRepository {
 
 export type AutomationState = "ACTIVE" | "INACTIVE" | "DRAFT";
 
+/**
+ * `POST /v1/{id}/transfer` body: hand the automation to a service account of
+ * the org, or back to the caller (managers only).
+ */
+export type TransferAutomationRequest =
+  | { to: "service"; service_account_id: string }
+  | { to: "self" };
+
+/** Who owns an automation. */
+export type AutomationOwnerKind = "user" | "service";
+
 export interface Automation {
   id: string;
   name: string;
@@ -72,6 +83,12 @@ export interface Automation {
    * automations even without `manage_automations`.
    */
   user_id?: string;
+  /**
+   * What `user_id` identifies: a person (`user`) or a service account
+   * (`service`). Absent on an automation service older than service-account
+   * owners; treat it as `user`.
+   */
+  owner_kind?: AutomationOwnerKind;
   /**
    * Single repository in the import/export file's shape. The automation
    * service does not return it; read `repositories` for what an automation

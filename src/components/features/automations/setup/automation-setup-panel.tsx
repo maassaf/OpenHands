@@ -83,6 +83,10 @@ import {
 import { Divider } from "#/ui/divider";
 import { cn } from "#/utils/utils";
 import { useDeploymentCapabilities } from "#/hooks/query/use-manifest-capabilities";
+import {
+  useServiceAccountOwnersEnabled,
+  useServiceAccounts,
+} from "#/hooks/query/use-service-accounts";
 import { AUTOMATION_DETAIL_QUERY_KEY } from "#/hooks/query/use-automation-detail";
 import { AUTOMATIONS_QUERY_KEY } from "#/hooks/query/use-automations";
 import {
@@ -439,6 +443,12 @@ function buildInitialForm(
   };
 }
 
+/** The service account id stored in a server draft body; empty for the caller. */
+function ownerFromDraftBody(body: unknown): string {
+  const owner = (body as { owner_user_id?: unknown } | null)?.owner_user_id;
+  return typeof owner === "string" ? owner : "";
+}
+
 function DraftStatusBar({
   draft,
   runs,
@@ -677,6 +687,12 @@ export function AutomationSetupPanel({
     ? (getAutomationFormSession(conversationId) ?? draft)
     : draft;
   const [form, setForm] = useState(() => buildInitialForm(initialDraft));
+  // The "Owner" field: the service account that will own a new
+  // automation; empty means the caller. It is saved in the server draft body
+  // (`owner_user_id`) and restored from there when a saved draft is reopened.
+  const [ownerUserId, setOwnerUserId] = useState("");
+  const serviceAccountOwnersEnabled = useServiceAccountOwnersEnabled();
+  const serviceAccounts = useServiceAccounts().data;
   const [eventTestPayload, setEventTestPayload] = useState(() =>
     buildDefaultEventTestPayload(DEFAULT_EVENT_SOURCE, DEFAULT_EVENT_KEY),
   );
@@ -923,6 +939,7 @@ export function AutomationSetupPanel({
         setServerDraft(saved);
         setDraftRuns([]);
         setForm(nextForm);
+        setOwnerUserId(ownerFromDraftBody(saved.draft));
         saveDraftInFormSession(saved, nextForm);
       })
       .catch((error: unknown) => {
@@ -1250,6 +1267,9 @@ export function AutomationSetupPanel({
           ),
           timezone: timezone.trim() || DEFAULT_TIMEZONE,
         };
+  // Only a new automation picks its owner; an existing one is moved with Transfer.
+  const showOwnerPicker = serviceAccountOwnersEnabled && !isEditingExisting;
+  const newAutomationOwnerId = showOwnerPicker ? ownerUserId : "";
   const buildPresetBody = (): SetupRequestBody => {
     const trimmedPrompt = prompt.trim();
     const body: SetupRequestBody = {
@@ -1273,6 +1293,7 @@ export function AutomationSetupPanel({
       body.plugins = configuredPlugins;
     }
     if (model.trim()) body.model = model.trim();
+    if (newAutomationOwnerId) body.owner_user_id = newAutomationOwnerId;
     return body;
   };
   const buildCustomBody = (tarballPath: string): SetupRequestBody =>
@@ -1286,6 +1307,7 @@ export function AutomationSetupPanel({
       ...(showTimeout && timeoutSeconds.trim()
         ? { timeout: Number(timeoutSeconds) }
         : {}),
+      ...(newAutomationOwnerId ? { owner_user_id: newAutomationOwnerId } : {}),
     }) as SetupRequestBody;
   /**
    * The request body sent to a server-backed draft. Custom drafts reference a
@@ -1364,6 +1386,7 @@ export function AutomationSetupPanel({
       agentProfileId,
       showTimeout,
       timeoutSeconds,
+      newAutomationOwnerId,
     ],
   );
   const isDraftDirty = savedDraftRequestKey
@@ -2014,6 +2037,50 @@ export function AutomationSetupPanel({
                   className={formControlFieldClassName}
                 />
               </Field>
+
+              {showOwnerPicker ? (
+                <Field label={t(I18nKey.AUTOMATION_SETUP$OWNER)}>
+                  <div className="relative">
+                    <select
+                      data-testid="automation-setup-owner"
+                      value={ownerUserId}
+                      onChange={(event) => setOwnerUserId(event.target.value)}
+                      className={cn(
+                        formControlFieldClassName,
+                        "appearance-none pr-8",
+                      )}
+                    >
+                      <option value="">
+                        {t(I18nKey.AUTOMATIONS$OWNER_ME)}
+                      </option>
+                      {/* A resumed draft's owner may be disabled or deleted by
+                          now. Keep it selected, shown by its id. */}
+                      {ownerUserId &&
+                      !(serviceAccounts ?? []).some(
+                        (account) =>
+                          account.id === ownerUserId && !account.is_disabled,
+                      ) ? (
+                        <option value={ownerUserId}>
+                          {(serviceAccounts ?? []).find(
+                            (account) => account.id === ownerUserId,
+                          )?.name ?? ownerUserId}
+                        </option>
+                      ) : null}
+                      {(serviceAccounts ?? [])
+                        .filter((account) => !account.is_disabled)
+                        .map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                    </select>
+                    <ChevronDown
+                      className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+                      aria-hidden
+                    />
+                  </div>
+                </Field>
+              ) : null}
 
               {isHydratingServerDraft ? (
                 <p
