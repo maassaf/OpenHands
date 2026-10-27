@@ -2264,6 +2264,7 @@ describe("AgentServerConversationService", () => {
         title: "Conversation conv-",
         status: "idle",
         stats: { usage_to_metrics: {} },
+        max_budget_per_run: null,
       });
     });
 
@@ -2273,6 +2274,7 @@ describe("AgentServerConversationService", () => {
         makeDirectConversation({
           title: "Running conversation",
           execution_status: "running",
+          max_budget_per_run: 5,
           metrics: {
             accumulated_cost: 2,
             max_budget_per_task: 10,
@@ -2299,6 +2301,7 @@ describe("AgentServerConversationService", () => {
       expect(result).toMatchObject({
         title: "Running conversation",
         status: "running",
+        max_budget_per_run: 5,
         metrics: {
           accumulated_cost: 2,
           max_budget_per_task: 10,
@@ -2337,7 +2340,10 @@ describe("AgentServerConversationService", () => {
       // ConversationClient is constructed against those runtime coordinates
       // rather than routed through the cloud proxy.
       mockGetConversation.mockResolvedValue(
-        makeDirectConversation({ execution_status: "paused" }),
+        makeDirectConversation({
+          execution_status: "paused",
+          max_budget_per_run: 3,
+        }),
       );
 
       const result =
@@ -2348,6 +2354,7 @@ describe("AgentServerConversationService", () => {
         );
 
       expect(result.status).toBe("paused");
+      expect(result.max_budget_per_run).toBe(3);
       expect(mockGetConversation).toHaveBeenCalledWith("conv-cloud");
       expect(ConversationClient).toHaveBeenLastCalledWith({
         conversationId: "conv-cloud",
