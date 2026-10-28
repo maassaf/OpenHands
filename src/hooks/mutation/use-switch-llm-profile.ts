@@ -14,6 +14,7 @@ import {
 import { displayErrorToast } from "#/utils/custom-toast-handlers";
 import { getApiOrConnectionErrorMessage } from "#/utils/api-error-message";
 import { I18nKey } from "#/i18n/declaration";
+import { useModelStore } from "#/stores/model-store";
 import { invalidateConversationQueries } from "./conversation-mutation-utils";
 import {
   llmProfileMirrored,
@@ -62,9 +63,17 @@ export const useSwitchLlmProfile = () => {
     meta: { disableToast: true },
     // Anchor the inline message where the user issued the switch; captured
     // synchronously here because the menu unmounts before the switch resolves.
-    onMutate: ({ conversationId }) => ({
-      anchorEventId: conversationId ? getLastRenderableEventId() : null,
-    }),
+    onMutate: ({ conversationId }) => {
+      // A home-page pick (no conversation) is an explicit model choice made
+      // before the first message: mark it so the next home launch suppresses
+      // "Run on first message" routing for this conversation only.
+      if (!conversationId) {
+        useModelStore.getState().setHomeManualModelPick(true);
+      }
+      return {
+        anchorEventId: conversationId ? getLastRenderableEventId() : null,
+      };
+    },
     onError: (error, { profileName }) => {
       const fallback = t(I18nKey.MODEL$SWITCH_FAILED, { name: profileName });
       // Server errors show their `detail`; a network failure or timeout keeps

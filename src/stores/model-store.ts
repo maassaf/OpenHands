@@ -40,6 +40,15 @@ interface ModelState {
    * activating the profile org-wide (which needs org-admin permission).
    */
   homeLlmProfile: string | null;
+  /**
+   * Transient: the user changed the model on the home page (LLM profile or ACP
+   * model) before the first message was sent. Suppresses "Run on first
+   * message" routing for that single home launch only — a manual pick is an
+   * explicit model choice the router shouldn't override on turn 1. Reset by
+   * `useCreateConversation` once the launch fires, so it never leaks across
+   * conversations.
+   */
+  homeManualModelPick: boolean;
 }
 
 interface ModelActions {
@@ -69,6 +78,7 @@ interface ModelActions {
   /** Drops only the optimistic active-profile entry for a conversation. */
   clearActiveProfile: (conversationId: string) => void;
   setHomeLlmProfile: (profileName: string | null) => void;
+  setHomeManualModelPick: (value: boolean) => void;
   clear: (conversationId: string) => void;
   clearAll: () => void;
 }
@@ -95,6 +105,7 @@ export const useModelStore = create<ModelStore>()(
       entriesByConversation: {},
       activeProfileByConversation: {},
       homeLlmProfile: null,
+      homeManualModelPick: false,
       show: (conversationId, anchorEventId, profiles) =>
         set((s) =>
           appendEntry(s, conversationId, {
@@ -155,6 +166,7 @@ export const useModelStore = create<ModelStore>()(
           return { activeProfileByConversation };
         }),
       setHomeLlmProfile: (profileName) => set({ homeLlmProfile: profileName }),
+      setHomeManualModelPick: (value) => set({ homeManualModelPick: value }),
       clear: (conversationId) =>
         set((s) => {
           const entriesByConversation = { ...s.entriesByConversation };
@@ -170,6 +182,7 @@ export const useModelStore = create<ModelStore>()(
           entriesByConversation: {},
           activeProfileByConversation: {},
           homeLlmProfile: null,
+          homeManualModelPick: false,
         }),
     }),
     { name: "ModelStore" },

@@ -20,6 +20,7 @@ import {
   BACKEND_REQUEST_TIMEOUT_MESSAGE,
   CORS_OR_NETWORK_ERROR_MESSAGE,
 } from "#/utils/user-facing-error";
+import { useModelStore } from "#/stores/model-store";
 
 vi.mock("#/utils/custom-toast-handlers");
 
@@ -81,6 +82,9 @@ describe("useSwitchLlmProfile", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     SettingsService.invalidateCache();
+    // The home-pick flag is set by the home-page switch path and consumed by
+    // the next createConversation; reset it so a prior test can't leak in.
+    useModelStore.getState().setHomeManualModelPick(false);
   });
 
   it("invalidates the settings cache on the home-page activate path (conversationId === null)", async () => {
@@ -111,6 +115,11 @@ describe("useSwitchLlmProfile", () => {
       queryKey: SETTINGS_QUERY_KEYS.personal(),
     });
     expect(mirroredFrom("old")).toEqual({ llm_profile_ref: "my-profile" });
+
+    // A home-page LLM pick is an explicit model choice made before the first
+    // message: mark it so the next home launch suppresses "Run on first
+    // message" routing for this conversation only.
+    expect(useModelStore.getState().homeManualModelPick).toBe(true);
 
     invalidateCacheSpy.mockRestore();
   });
@@ -143,6 +152,10 @@ describe("useSwitchLlmProfile", () => {
       queryKey: SETTINGS_QUERY_KEYS.personal(),
     });
     expect(updateDefaultAgentProfileMock).not.toHaveBeenCalled();
+
+    // A per-conversation switch isn't a pre-first-message home pick, so it must
+    // not arm the route-at-start suppression.
+    expect(useModelStore.getState().homeManualModelPick).toBe(false);
 
     invalidateCacheSpy.mockRestore();
   });
