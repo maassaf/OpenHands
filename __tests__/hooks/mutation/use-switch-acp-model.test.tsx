@@ -6,6 +6,7 @@ import AgentServerConversationService from "#/api/conversation-service/agent-ser
 import AgentProfilesService from "#/api/agent-profiles-service/agent-profiles-service.api";
 import SettingsService from "#/api/settings-service/settings-service.api";
 import { SETTINGS_QUERY_KEYS } from "#/hooks/query/query-keys";
+import { useModelStore } from "#/stores/model-store";
 
 vi.mock(
   "#/api/conversation-service/agent-server-conversation-service.api",
@@ -50,6 +51,9 @@ const renderSwitchHook = () => {
 describe("useSwitchAcpModel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The home-pick flag is set by the home-page switch path and consumed by
+    // the next createConversation; reset it so a prior test can't leak in.
+    useModelStore.getState().setHomeManualModelPick(false);
   });
 
   it("live-switches the ACP model for an active conversation and invalidates conversation queries", async () => {
@@ -82,6 +86,9 @@ describe("useSwitchAcpModel", () => {
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["user", "conversations"],
     });
+    // A per-conversation ACP switch isn't a pre-first-message home pick, so it
+    // must not arm the route-at-start suppression.
+    expect(useModelStore.getState().homeManualModelPick).toBe(false);
   });
 
   it("persists the model as the agent-settings default on the home page when no ACP profile is active", async () => {
@@ -118,6 +125,10 @@ describe("useSwitchAcpModel", () => {
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: SETTINGS_QUERY_KEYS.personal(),
     });
+    // A home-page ACP model pick is an explicit model choice made before the
+    // first message: mark it so the next home launch suppresses "Run on first
+    // message" routing for this conversation only.
+    expect(useModelStore.getState().homeManualModelPick).toBe(true);
   });
 
   it("persists the model into the active ACP profile on the home page", async () => {

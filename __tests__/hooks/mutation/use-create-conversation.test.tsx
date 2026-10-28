@@ -8,7 +8,7 @@ import {
   getStoredConversationMetadata,
   removeStoredConversationMetadata,
 } from "#/api/conversation-metadata-store";
-import { AGENT_PROFILES_QUERY_KEYS } from "#/hooks/query/query-keys";
+import { useModelStore } from "#/stores/model-store";
 
 vi.mock("#/hooks/use-tracking", () => ({
   useTracking: () => ({
@@ -49,6 +49,23 @@ vi.mock("#/hooks/query/use-llm-profiles", () => ({
 // no-op and drive launches through the service mock below.
 vi.mock("#/hooks/query/use-agent-profiles", () => ({
   useAgentProfiles: () => ({ data: undefined }),
+}));
+
+// The cloud path stamps the "Run on first message" suffix from the warmed
+// settings + meta-profile queries. Default to router-off / no active
+// meta-profile so existing exact-payload tests are unaffected; the
+// route-at-start suite overrides these per-test.
+const { useSettingsMock } = vi.hoisted(() => ({
+  useSettingsMock: vi.fn(() => ({ data: {} })),
+}));
+vi.mock("#/hooks/query/use-settings", () => ({
+  useSettings: () => useSettingsMock(),
+}));
+const { useMetaProfilesMock } = vi.hoisted(() => ({
+  useMetaProfilesMock: vi.fn(() => ({ data: {} })),
+}));
+vi.mock("#/hooks/query/use-meta-profiles", () => ({
+  useMetaProfiles: () => useMetaProfilesMock(),
 }));
 
 // The launch path resolves the active AgentProfile by awaiting
@@ -131,6 +148,13 @@ describe("useCreateConversation", () => {
     removeStoredConversationMetadata("conv-with-plugins");
     removeStoredConversationMetadata("conv-ref-stamp");
     removeStoredConversationMetadata("conv-dropdown-override");
+    // The route-at-start suppression flag is set by a home-page model pick and
+    // reset by the launch — make sure a leftover from a prior test can't flip
+    // this test's expectations.
+    useModelStore.getState().setHomeManualModelPick(false);
+    // Restore the default router-off / no-active-meta-profile mocks.
+    useSettingsMock.mockReturnValue({ data: {} });
+    useMetaProfilesMock.mockReturnValue({ data: {} });
   });
 
   it("passes suggested tasks to the V1 create conversation API", async () => {
@@ -816,6 +840,69 @@ describe("useCreateConversation", () => {
 
       expect(call?.agentProfileId).toBe("profile-luna");
       expect(call).not.toHaveProperty("agentLlmProfileOverride");
+    });
+  });
+
+  describe("Run on first message suppression after a home-page model pick", () => {
+    // The router-at-start suffix is emitted only when the toggle is on, an
+    // active meta-profile exists, AND the user hasn't made an explicit model
+    // pick on the home page before sending. A manual pick is an explicit
+    // choice the router shouldn't override on turn 1.
+    beforeEach(() => {
+      useSettingsMock.mockReturnValue({
+        data: { run_router_at_conversation_start: true },
+      });
+      useMetaProfilesMock.mockReturnValue({
+        data: { active_meta_profile: "router-1" },
+      });
+    });
+
+    async function launchCall() {
+      const createConversationSpy = vi
+        .spyOn(AgentServerConversationService, "createConversation")
+        .mockResolvedValue({
+          id: "task-id",
+          app_conversation_id: "conv-route-start",
+          agent_server_url: "http://agent-server.local",
+        } as never);
+      const { result } = renderHook(() => useCreateConversation(), {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={new QueryClient()}>
+            {children}
+          </QueryClientProvider>
+        ),
+      });
+      await result.current.mutateAsync({ query: "hello" });
+      return createConversationSpy.mock.lastCall?.[0];
+    }
+
+    afterEach(() => {
+      removeStoredConversationMetadata("conv-route-start");
+    });
+
+    it("emits the route-at-start suffix when no manual pick was made", async () => {
+      const call = await launchCall();
+      expect(call?.runRouterAtConversationStart).toBe(true);
+      expect(call?.hasActiveMetaProfile).toBe(true);
+      // The flag is cleared after the launch so the next conversation routes
+      // as normal.
+      expect(useModelStore.getState().homeManualModelPick).toBe(false);
+    });
+
+    it("suppresses the suffix for the single launch after a home-page model pick", async () => {
+      useModelStore.getState().setHomeManualModelPick(true);
+      const call = await launchCall();
+      expect(call).not.toHaveProperty("runRouterAtConversationStart");
+      expect(call).not.toHaveProperty("hasActiveMetaProfile");
+      // The flag only applies to the current launch; it's reset afterwards.
+      expect(useModelStore.getState().homeManualModelPick).toBe(false);
+    });
+
+    it("re-routes on the next launch once the pick has been consumed", async () => {
+      useModelStore.getState().setHomeManualModelPick(true);
+      await launchCall(); // consumes + resets the flag
+      const call = await launchCall();
+      expect(call?.runRouterAtConversationStart).toBe(true);
     });
   });
 });
